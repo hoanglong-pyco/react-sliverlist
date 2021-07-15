@@ -1,0 +1,86 @@
+.Sliver {
+  &-scroller {
+    overflow: auto;
+    position: relative;
+  }
+  &-autoSize {
+    height: 100%;
+  }
+
+  &Section {
+    &-header {
+      position: sticky;
+      z-index: 1;
+    }
+  }
+
+  &Tree {
+    &-label {
+      --position: 0px;
+      display: flex;
+      align-items: center;
+      box-sizing: border-box;
+    }
+    &-expand {
+      position: relative;
+      z-index: 100;
+      &::before {
+        content: "+";
+      }
+      &.expanded {
+        &::before {
+          content: "-";
+        }
+      }
+    }
+  }
+}
+
+.horizontal .Sliver {
+  &Section {
+    &-header {
+      top: 0;
+      height: var(--size);
+    }
+  }
+
+  &Section,
+  &Tree,
+  &Tree-label,
+  &List,
+  &List-item {
+    position: absolute;
+    width: 100%;
+    left: 0;
+    height: var(--size);
+    top: var(--position);
+  }
+
+  &Tree {
+    &-label {
+      padding-left: calc(30px + var(--level) * 30px);
+    }
+  }
+}
+
+.verticle .Sliver {
+  &Section {
+    &-header {
+      left: 0;
+      height: 100%;
+      width: var(--size);
+    }
+  }
+
+  &Section,
+  &Tree,
+  &Tree-label,
+  &List,
+  &List-item {
+    position: absolute;
+    height: 100%;
+    width: var(--size);
+    left: var(--position);
+    top: 0;
+  }
+}
