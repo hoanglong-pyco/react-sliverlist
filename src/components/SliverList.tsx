@@ -1,82 +1,149 @@
-import { SliverAbstract } from "./Sliver";
-import { Viewport } from "./Values";
+import { SliverSelection } from "./Selection";
+import { createSliverRender, SliverAbstract } from "./Sliver";
+
+type ItemView = { position: number; index: number; sliver: SliverAbstract };
+
+const maxExtent = Math.max(window.innerHeight, window.innerWidth);
+
+type SliverListProps = {
+  slivers?: SliverAbstract[];
+  selection?: SliverSelection;
+};
 
 export class SliverList extends SliverAbstract {
   private $slivers: SliverAbstract[] = [];
-  constructor(slivers: SliverAbstract[]) {
+  constructor({ slivers, selection }: SliverListProps = {}) {
     super();
-    slivers.forEach(this.addSliver.bind(this));
+    slivers?.forEach((item) => this.addSliver(item));
+    this.notify = this.notify.bind(this);
+    selection?.addListen(this.notify);
+    this.selection = selection;
   }
 
-  private $itemChanged = this.notify.bind(this);
+  selection?: SliverSelection;
+
+  forceRefresh = (() => {
+    let frame: number;
+    return () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => this.notify(true));
+    };
+  })();
+
   addSliver(sliver: SliverAbstract, index?: number) {
-    this.$slivers.splice(index ?? this.$slivers.length, 0, sliver);
-    sliver.addListen(this.$itemChanged);
+    index = index ?? this.$slivers.length;
+    this.$slivers.splice(index, 0, sliver);
+    this.selection?.add(sliver.key);
+    sliver.addListen(this.notify);
   }
 
   removeSliver(sliver: SliverAbstract) {
     if (this.$slivers.remove(sliver)) {
-      sliver.removeListen(this.$itemChanged);
+      this.selection?.remove(sliver.key);
+      sliver.removeListen(this.notify);
     }
   }
 
-  attack(position: number) {
-    super.attack(position);
-    this.size = 0;
-    this.$slivers.forEach((sliver) => {
-      sliver.attack(this.size);
-      this.size += sliver.size;
-    });
-  }
+  clearSliver = () => {
+    this.selection?.empty();
+    this.$slivers.forEach((sliver) => sliver.removeListen(this.notify));
+    this.$slivers = [];
+    this.$views = [];
+  };
 
   dispose() {
-    this.$slivers.forEach((sliver) => sliver.dispose());
-    this.$slivers = [];
+    this.clearSliver();
+    this.selection?.removeListen(this.notify);
     super.dispose();
   }
 
+  private $views: ItemView[] = [];
+  private $extend = 0;
+  private $animate(value: number) {
+    this.forceRefresh();
+    this.$extend = value;
+  }
+
+  calcSize() {
+    const { $views, $slivers } = this;
+    let total = 0;
+    let skipAnimate = !$views.length || this.$extend;
+
+    const changed = !!$slivers.find((sliver, index) => {
+      const size = sliver.visible ? sliver.calcSize() : 0;
+      const old = $views[index];
+      if (!old || skipAnimate) {
+        $views[index] = { position: total, index, sliver };
+      } else if (old.position !== total) {
+        const extent = Math.abs(old.position - total);
+        if (extent < maxExtent) {
+          this.$animate(extent);
+          return true;
+        } else {
+          skipAnimate = true;
+          old.position = total;
+        }
+      }
+      total += size;
+      return false;
+    });
+
+    if (changed && !skipAnimate) return this.$size;
+    return (this.$size = total);
+  }
+
   private findVisibles(position: number, max: number) {
-    const visibles = Array<SliverAbstract>();
-    const { $slivers: slivers } = this;
-    const { length } = slivers;
+    const visibles = Array<ItemView>();
+    const { $views } = this;
+    const { length } = $views;
 
-    // position -= 200;
-    // max += 200;
-
-    let index = slivers.findBinary((sliver) => {
-      if (position < sliver.position) return 1;
-      if (position > sliver.position + sliver.size) return -1;
+    let index = $views.findBinary((view, index) => {
+      if (position < view.position) return 1;
+      if (position > view.position + view.sliver.size) return -1;
       return 0;
     });
-    index = Math.max(index, 0);
-
+    if (index < 0) return [];
     for (; index < length; index++) {
-      const sliver = slivers[index];
-      if (sliver.position > max) break;
-      visibles.push(sliver);
+      const view = $views[index];
+      if (view.sliver.visible) {
+        if (view.position > max) break;
+        visibles.push(view);
+      }
     }
     return visibles;
   }
 
-  render(viewport: Viewport, className: string) {
-    const { position, size } = this;
-    const localViewport = {
-      position: viewport.position - position,
-      size: viewport.size,
-    };
-    return (
-      <div
-        key={this.key}
-        className={`SliverList ${className}`}
-        style={{ "--size": size + "px", "--position": position + "px" } as any}
-      >
-        {this.findVisibles(
-          localViewport.position,
-          viewport.position + viewport.size
-        ).map((sliver) => {
-          return sliver.render(localViewport, "SliverList-item");
-        })}
-      </div>
-    );
-  }
+  render = createSliverRender(
+    "SliverList",
+    ({ viewport, position = 0 }) => {
+      const viewSize = viewport.size + this.$extend;
+      const localViewport = {
+        position: viewport.position - position,
+        size: viewSize,
+      };
+      return this.findVisibles(
+        Math.max(localViewport.position, 0),
+        viewport.position + viewSize
+      ).map(({ sliver, position, index }) => {
+        return sliver.render({
+          position,
+          className: "SliverList-item " + (index % 2 ? "even" : "odd"),
+          viewport: localViewport,
+          style: { "--size": sliver.size } as any,
+          tabIndex: 0,
+          "aria-selected": this.selection?.isSelected(sliver.key) || undefined,
+          onClick: this.selection?.handler(sliver.key),
+        });
+      });
+    },
+    (props) => {
+      if (this.$extend) {
+        props.onTransitionEnd = () => {
+          this.$extend = 0;
+          this.notify(false);
+        };
+      }
+      return props;
+    }
+  );
 }

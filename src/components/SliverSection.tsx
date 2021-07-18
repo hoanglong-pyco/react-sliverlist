@@ -1,5 +1,4 @@
-import { SliverAbstract } from "./Sliver";
-import { Viewport } from "./Values";
+import { createSliverRender, RenderProps, SliverAbstract } from "./Sliver";
 interface SliverSectionProps {
   section: (toggle: (value?: boolean) => any) => SliverAbstract;
   content: (toggle: (value?: boolean) => any) => SliverAbstract;
@@ -16,14 +15,12 @@ export class SliverSection extends SliverAbstract {
     this.content.addListen(itemChanged);
   }
 
-  attack(position: number) {
-    super.attack(position);
-    this.section.attack(0);
-    this.size = this.section.size;
+  calcSize() {
+    this.$size = this.section.calcSize();
     if (this.expanded) {
-      this.content.attack(this.section.size);
-      this.size += this.content.size;
+      this.$size += this.content.calcSize();
     }
+    return this.$size;
   }
 
   private $expanded = true;
@@ -33,27 +30,33 @@ export class SliverSection extends SliverAbstract {
   set expanded(value) {
     if (value !== this.$expanded) {
       this.$expanded = value;
-      this.notify();
+      this.notify(true);
     }
   }
 
   toggle = (value?: boolean) => (this.expanded = value ?? !this.expanded);
 
-  render(viewport: Viewport, className: string) {
-    const { position, size, section, content, expanded } = this;
-    const localViewport = {
-      position: viewport.position - this.position,
-      size: viewport.size,
-    };
-    return (
-      <div
-        key={this.key}
-        className={`SliverSection ${className}`}
-        style={{ "--size": size + "px", "--position": position + "px" } as any}
-      >
-        {section.render(localViewport, "SliverSection-header")}
-        {expanded && content.render(localViewport, "SliverSection-content")}
-      </div>
-    );
-  }
+  render = createSliverRender(
+    "SliverSection",
+    ({ viewport, position = 0 }: RenderProps) => {
+      const { section, content, expanded } = this;
+      const localViewport = {
+        position: viewport.position - position,
+        size: viewport.size,
+      };
+      return (
+        <>
+          {section.render({
+            className: "SliverSection-header",
+            viewport: localViewport,
+          })}
+          {expanded &&
+            content.render({
+              className: "SliverSection-content",
+              viewport: localViewport,
+            })}
+        </>
+      );
+    }
+  );
 }

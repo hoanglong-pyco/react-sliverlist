@@ -1,112 +1,172 @@
-import { SliverAbstract } from "./Sliver";
+import { createSliverRender, SliverAbstract } from "./Sliver";
 import { SliverList } from "./SliverList";
-import { Viewport } from "./Values";
-import { ValueChanged } from "./Notifier";
-import { ReactNode } from "react";
+import { HTMLAttributes, MouseEvent, ReactNode } from "react";
+import { SliverSelection } from "./Selection";
+import { SliverTreeNode } from "./SliverTreeNode";
 
-interface SliverTreeProps<T> {
+interface SliverTreeProps<T extends SliverTreeNode<any>> {
   itemSize: number;
-  node: SliverTreeNode<T>;
-  renderLabel: (node: SliverTreeNode<T>) => ReactNode;
+  node: T;
+  renderNode: (node: T) => ReactNode;
+  renderProps?: (node: T) => HTMLAttributes<HTMLElement>;
+  selection?: SliverSelection;
 }
 
-export class SliverTreeNode<T> extends ValueChanged<T> {
-  public level = 0;
-  constructor(value: T, public children: SliverTreeNode<T>[] = []) {
-    super(value);
-  }
-
-  private $expanded = true;
-  get expanded() {
-    return this.$expanded;
-  }
-  set expanded(value) {
-    if (value !== this.$expanded) {
-      this.$expanded = value;
-      this.notify();
-    }
-  }
-}
-
-export class SliverTree<T> extends SliverAbstract {
+export class SliverTree<
+  T extends SliverTreeNode<D>,
+  D = any
+> extends SliverAbstract {
   protected children: SliverList;
+
+  get node() {
+    return this.props.node;
+  }
+
   constructor(protected props: SliverTreeProps<T>) {
     super();
-    this.children = new SliverList(
-      props.node.children.map((node) => {
-        node.level = props.node.level + 1;
-        return new SliverTree<T>({ ...props, node });
-      })
-    );
-    props.node.addListen(this.notify);
-    this.children.addListen(this.notify);
-  }
 
-  notify = () => super.notify();
+    this.notify = this.notify.bind(this);
 
-  attack(position: number) {
-    super.attack(position);
-    const { itemSize, node } = this.props;
-    this.size = itemSize;
-    if (node.children.length && node.expanded) {
-      this.children.attack(itemSize);
-      this.size += this.children.size;
+    const { selection, node } = props;
+    selection?.add(this.key);
+    if (!node.level) {
+      selection?.addListen(this.notify);
     }
+
+    this.children = new SliverList();
+    node.addListen(this.onNodeChanged);
+    this.children.addListen(this.notify);
+    this.toggleChildren();
   }
 
-  toggleExpand = () => {
+  get visible() {
+    return this.node.visible;
+  }
+  set visible(value) {
+    this.node.visible = value;
+  }
+
+  private toggleChildren = () => {
+    const { props, children } = this;
+    // if (props.node.expanded) {
+    props.node.children.forEach((node) => {
+      node.level = props.node.level + 1;
+      const sliver = new SliverTree<T>({ ...props, node: node as T });
+
+      children.addSliver(sliver);
+    });
+    // } else {
+    //   children.clearSliver();
+    // }
+  };
+
+  private $animate = false;
+
+  calcSize() {
+    const { itemSize, node } = this.props;
+    this.$size = itemSize;
+    if (node.children.length && node.expanded) {
+      this.$size += this.children.calcSize();
+    }
+    return this.$size;
+  }
+
+  dispose() {
+    this.children.dispose();
+    this.node.removeListen(this.onNodeChanged);
+    this.props.selection?.removeListen(this.notify);
+    super.dispose();
+  }
+
+  private onNodeChanged = (key: keyof T) => {
+    const changedKeys: (keyof T)[] = ["expanded", "visible"];
+    if (!changedKeys.includes(key)) return;
+    // if (!this.$animate && node.expanded) this.toggleChildren();
+    this.notify(true);
+    this.$animate = true;
+  };
+
+  private onTransitionEnd = () => {
+    // const { node } = this.props;
+    this.$animate = false;
+    // if (!node.expanded) this.toggleChildren();
+  };
+
+  private toggleExpand = (event: MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
     const { node } = this.props;
     node.expanded = !node.expanded;
   };
 
-  dispose() {
-    this.children.dispose();
-    this.props.node.removeListen(this.notify);
-    super.dispose();
-  }
-
-  render(viewport: Viewport, className: string) {
-    const { position, size, children } = this;
-    const { node, itemSize, renderLabel } = this.props;
-    const localViewport = {
-      position: viewport.position - this.position,
-      size: viewport.size,
-    };
+  render = (() => {
+    const { node, itemSize, renderNode: renderLabel } = this.props;
     const hasChild = !!node.children.length;
+    let className = "SliverTree";
+    className += hasChild ? " haschild" : " single";
 
-    className += hasChild
-      ? " SliverTree-haschild" + (node.expanded ? " expanded" : "")
-      : " SliverTree-singgle";
-
-    const itemStyle = {
-      "--size": size + "px",
-      "--position": position + "px",
-      "--level": node.level,
-    };
-    return (
-      <div
-        key={this.key}
-        className={`SliverTree ${className}`}
-        style={itemStyle as any}
-      >
-        <div
-          key={this.key}
-          className="SliverTree-label"
-          style={{ "--size": itemSize + "px" } as any}
-        >
-          {hasChild && (
-            <button
-              type="button"
-              className={`SliverTree-expand${node.expanded ? " expanded" : ""}`}
-              onClick={this.toggleExpand}
-            />
-          )}
-          {renderLabel(node)}
-        </div>
-        {hasChild &&
-          node.expanded &&
-          children.render(localViewport, "SliverTree-children")}
-      </div>
+    return createSliverRender(
+      className,
+      ({ viewport, position = 0 }) => {
+        const localViewport = {
+          position: viewport.position - position,
+          size: viewport.size,
+        };
+        const renderChild = hasChild && (node.expanded || this.$animate);
+        const isSelected = this.props.selection?.isSelected(this.key);
+        return (
+          <>
+            <div
+              key={this.key}
+              className="SliverTree-label"
+              style={{ "--size": itemSize } as any}
+              aria-selected={isSelected || undefined}
+              onClick={this.props.selection?.handler(this.key)}
+              tabIndex={0}
+            >
+              {hasChild && (
+                <div
+                  className={`SliverTree-toggle${
+                    node.expanded ? " expanded" : ""
+                  }`}
+                  onClick={this.toggleExpand}
+                />
+              )}
+              {renderLabel(node)}
+            </div>
+            <div
+              style={{ position: "absolute", top: 0, left: 0 }}
+              onClick={() => {
+                this.visible = false;
+              }}
+            >
+              Click
+            </div>
+            {renderChild &&
+              this.children.render({
+                className: "SliverTree-children",
+                viewport: localViewport,
+                position: itemSize,
+              })}
+          </>
+        );
+      },
+      (props) => {
+        const { node } = this.props;
+        const style = {
+          ...props.style,
+          "--level": node.level,
+        };
+        if (this.$animate) {
+          style.overflow = "hidden";
+          props.onTransitionEnd = this.onTransitionEnd;
+        }
+        delete props.tabIndex;
+        return Object.assign(props, {
+          className: props.className + (node.expanded ? " expanded" : ""),
+          style,
+          "data-level": node.level,
+        });
+      }
     );
-  }
+  })();
 }

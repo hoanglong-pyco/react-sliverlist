@@ -1,10 +1,23 @@
 .Sliver {
+  position: relative;
+  &:not(.Sliver-scroller) > .SliverList {
+    position: relative;
+  }
   &-scroller {
     overflow: auto;
-    position: relative;
   }
   &-autoSize {
     height: 100%;
+  }
+
+  &List {
+    &-item {
+      transition: all ease-out 0.3s;
+
+      &[aria-selected] {
+        background-color: #eee;
+      }
+    }
   }
 
   &Section {
@@ -14,25 +27,44 @@
     }
   }
 
+  &Auto {
+    --size: auto;
+  }
+
   &Tree {
+    transition: all ease-out 0.3s;
+    background-color: #fff;
     &-label {
-      --position: 0px;
+      --pos: 0;
       display: flex;
       align-items: center;
       box-sizing: border-box;
+      &[aria-selected] {
+        background-color: rgba(0, 0, 0, 0.1);
+      }
     }
-    &-expand {
-      position: relative;
-      z-index: 100;
+    &-toggle {
+      width: 1.5em;
+      height: 1.5em;
+      margin-right: 6px;
+      cursor: pointer;
       &::before {
-        content: "+";
+        content: "▼";
+        font-size: 1.25em;
+        display: block;
+        text-align: center;
+        transition: all ease-out 0.3s;
+        transform: rotate(-90deg) scaleY(0.5);
       }
       &.expanded {
         &::before {
-          content: "-";
+          transform: rotate(0deg) scaleY(0.5);
         }
       }
     }
+  }
+  .hidden {
+    overflow: hidden !important;
   }
 }
 
@@ -40,20 +72,20 @@
   &Section {
     &-header {
       top: 0;
-      height: var(--size);
+      height: calc(var(--size) * 1px);
     }
   }
 
   &Section,
-  &Tree,
   &Tree-label,
   &List,
-  &List-item {
+  &List-item,
+  &Auto {
     position: absolute;
     width: 100%;
     left: 0;
-    height: var(--size);
-    top: var(--position);
+    height: calc(var(--size) * 1px);
+    top: calc(var(--pos) * 1px);
   }
 
   &Tree {
@@ -68,19 +100,18 @@
     &-header {
       left: 0;
       height: 100%;
-      width: var(--size);
+      width: calc(var(--size) * 1px);
     }
   }
 
   &Section,
-  &Tree,
   &Tree-label,
   &List,
   &List-item {
     position: absolute;
     height: 100%;
-    width: var(--size);
-    left: var(--position);
+    width: calc(var(--size) * 1px);
+    left: calc(var(--pos) * 1px);
     top: 0;
   }
 }

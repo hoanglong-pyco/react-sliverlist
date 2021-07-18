@@ -1,18 +1,48 @@
-import { ReactNode } from "react";
+import { HTMLAttributes, ReactNode } from "react";
 import { Notifier } from "./Notifier";
 import { Viewport } from "./Values";
 
-export abstract class SliverAbstract extends Notifier {
+export type RenderProps = HTMLAttributes<HTMLElement> & {
+  position?: number;
+  viewport: Viewport;
+};
+
+export const createSliverRender = (
+  rootClass: string,
+  children: (props: RenderProps) => ReactNode,
+  override: (props: RenderProps) => RenderProps = (props) => props
+) => {
+  return function render(this: SliverAbstract, renderer: RenderProps) {
+    const { position, viewport, ...props } = override(renderer);
+    props.style = {
+      "--size": this.size,
+      "--pos": position,
+      ...props.style,
+    } as any;
+    return (
+      <div
+        key={this.key}
+        {...props}
+        className={rootClass + " " + props.className}
+        children={children(renderer)}
+      />
+    );
+  };
+};
+export abstract class SliverAbstract extends Notifier<[boolean]> {
   key = Math.random();
-
-  size = 0;
-  private $position = 0;
-  get position() {
-    return this.$position;
-  }
-  attack(position: number) {
-    this.$position = position;
+  protected $visible = true;
+  get visible() {
+    return this.$visible;
   }
 
-  abstract render(viewport: Viewport, className?: string): ReactNode;
+  protected $size = 0;
+  get size() {
+    return this.$size;
+  }
+  calcSize() {
+    return this.$size;
+  }
+
+  abstract render(props: RenderProps): ReactNode;
 }

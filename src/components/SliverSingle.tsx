@@ -1,24 +1,12 @@
 import { ReactNode } from "react";
-import { SliverAbstract } from "./Sliver";
-import { Viewport } from "./Values";
+import { createSliverRender, SliverAbstract } from "./Sliver";
 
 export class SliverSingle extends SliverAbstract {
   constructor(
-    public size: number,
+    protected $size: number,
     private $render: (this: SliverSingle) => ReactNode
   ) {
     super();
   }
-  render(viewport: Viewport, className: string) {
-    const { size, position } = this;
-    return (
-      <div
-        key={this.key}
-        className={`SliverSingle ${className}`}
-        style={{ "--size": size + "px", "--position": position + "px" } as any}
-      >
-        {this.$render.call(this)}
-      </div>
-    );
-  }
+  render = createSliverRender("SliverSingle", this.$render.bind(this));
 }
